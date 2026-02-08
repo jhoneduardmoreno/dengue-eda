@@ -1,0 +1,11 @@
+pandas
+numpy
+matplotlib
+seaborn
+openpyxl
+xlrd
+jupyter
+earthengine-api
+geemap
+geopandas
+folium
