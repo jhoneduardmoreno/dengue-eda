@@ -3,7 +3,9 @@
     "allow": [
       "Bash(conda activate:*)",
       "Bash(python:*)",
-      "Bash(conda run -n dengue-eda python:*)"
+      "Bash(conda run -n dengue-eda python:*)",
+      "Bash(dir:*)",
+      "Bash(findstr:*)"
     ]
   }
 }
