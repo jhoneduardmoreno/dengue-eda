@@ -2,16 +2,6 @@
 
 Análisis exploratorio de datos (EDA) sobre la incidencia de dengue y dengue grave en Colombia, integrando datos epidemiológicos del SIVIGILA, proyecciones poblacionales del DANE y variables climáticas obtenidas de Google Earth Engine.
 
-## Contexto académico
-
-Proyecto desarrollado en el marco de la **Maestría en Inteligencia Artificial** de la **Universidad Autónoma de Occidente**, para la materia **Desarrollo de Soluciones**.
-
-## Autores
-
-- Jhon Edwar Salazar
-- Santiago Castaño Orozco
-- David Alejandro Burbano Getial
-
 ## Fuentes de datos
 
 | Fuente | Descripción |
