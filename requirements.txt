@@ -9,3 +9,4 @@ earthengine-api
 geemap
 geopandas
 folium
+fpdf2
