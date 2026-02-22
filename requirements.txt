@@ -12,3 +12,4 @@ folium
 fpdf2
 scikit-learn
 xgboost
+python-docx

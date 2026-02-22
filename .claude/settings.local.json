@@ -6,7 +6,8 @@
       "Bash(conda run -n dengue-eda python:*)",
       "Bash(dir:*)",
       "Bash(findstr:*)",
-      "Bash(/c/miniconda3/envs/dengue-eda/python -m jupyter nbconvert:*)"
+      "Bash(/c/miniconda3/envs/dengue-eda/python -m jupyter nbconvert:*)",
+      "Bash(conda run:*)"
     ]
   }
 }
