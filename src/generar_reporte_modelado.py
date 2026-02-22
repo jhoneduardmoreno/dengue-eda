@@ -32,6 +32,7 @@ from sklearn.metrics import (
     f1_score, precision_score, recall_score, accuracy_score,
 )
 from xgboost import XGBClassifier
+import joblib
 
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
@@ -47,6 +48,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "panel_municipal_mensual.parquet"
 GRAPHS_DIR = PROJECT_ROOT / "results_graphs" / "modelado"
 OUTPUT_DOCX = PROJECT_ROOT / "reporte_modelado_dengue.docx"
+MODELS_DIR = PROJECT_ROOT / "models"
 
 # Colores para graficos
 COLOR_LR = "#2196F3"
@@ -152,11 +154,27 @@ def entrenar_modelos(X_train, y_train, X_test):
     y_prob_xgb = xgb.predict_proba(X_test)[:, 1]
 
     modelos = {
-        "Logistic Regression": {"pred": y_pred_lr, "prob": y_prob_lr, "model": lr},
+        "Logistic Regression": {"pred": y_pred_lr, "prob": y_prob_lr, "model": lr, "scaler": scaler},
         "Random Forest": {"pred": y_pred_rf, "prob": y_prob_rf, "model": rf},
         "XGBoost": {"pred": y_pred_xgb, "prob": y_prob_xgb, "model": xgb},
     }
     return modelos
+
+
+def exportar_modelo_lr(modelos):
+    """Exporta el modelo Logistic Regression (con scaler y features) a joblib."""
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    lr_data = modelos["Logistic Regression"]
+    artefacto = {
+        "model": lr_data["model"],
+        "scaler": lr_data["scaler"],
+        "features": FEATURES,
+    }
+    ruta = MODELS_DIR / "logistic_regression.joblib"
+    joblib.dump(artefacto, ruta)
+    tamano_kb = ruta.stat().st_size / 1024
+    print(f"  Modelo exportado: {ruta}  ({tamano_kb:.1f} KB)")
+    return ruta
 
 
 def calcular_metricas(y_test, modelos):
@@ -801,6 +819,7 @@ def main():
     # 2. Modelos
     print("\n[2/4] Entrenando modelos...")
     modelos = entrenar_modelos(X_train, y_train, X_test)
+    exportar_modelo_lr(modelos)
 
     # 3. Metricas
     print("\n[3/4] Calculando metricas y generando graficos...")
