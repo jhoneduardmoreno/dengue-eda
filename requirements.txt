@@ -10,3 +10,5 @@ geemap
 geopandas
 folium
 fpdf2
+scikit-learn
+xgboost
