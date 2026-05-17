@@ -20,8 +20,20 @@ DENGUE_GRAVE_DIR = DATA_DIR / "dengue fuerte"
 DANE_DIR = DATA_DIR / "dane"
 CLIMA_DIR = DATA_DIR / "clima"
 
+# ============================================================================
+# Variables de entorno (.env)
+# ============================================================================
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+
+GEE_PROJECT_ID = os.environ.get("GEE_PROJECT_ID")
+
 # Anos de interes
-ANOS_ESTUDIO = [2010, 2016, 2019, 2022, 2024]
+# Serie continua 2007-2024 (decisión Carlos 2026-04-24: usar todos los años)
+ANOS_ESTUDIO = list(range(2007, 2025))
 ANOS_DENGUE_REGULAR = [2010, 2016, 2022, 2024]  # No hay 2019 para cod 210
 ANOS_DENGUE_GRAVE = [2010, 2016, 2019, 2022, 2024]
 
