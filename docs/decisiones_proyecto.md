@@ -1,0 +1,273 @@
+# Decisiones del proyecto y justificaciones
+
+> Bitácora viva de las decisiones técnicas y metodológicas del proyecto de
+> dengue, con las razones detrás de cada una. Sirve como insumo directo
+> para el documento final y la sustentación.
+
+---
+
+## D1 — Alcance espacial: 3 municipios foco
+
+**Decisión:** Entrenar **un modelo independiente por cada uno** de los
+siguientes 3 municipios:
+
+| DIVIPOLA | Municipio | Departamento | Región | Población 2024 |
+|---|---|---|---|---:|
+| 23855 | Valencia | Córdoba | Caribe | 36.721 |
+| 47288 | Fundación | Magdalena | Sierra Nevada | 75.360 |
+| 95025 | El Retorno | Guaviare | Amazonía | 13.324 |
+
+**Por qué 3 (y no 1, ni 10):**
+
+- **1 municipio fue descartado** porque concentra todo el riesgo del proyecto
+  en una única serie temporal. Si esa serie presentara un año atípico, un
+  hueco de SIVIGILA o estacionalidad rota, no habría plan B. Además, una
+  conclusión sobre un solo caso es estadísticamente anecdótica: no permite
+  afirmar que "el enfoque regional generaliza".
+- **10 municipios fue descartado** por dispersión de esfuerzo. Con el
+  tiempo disponible, tunear 10 modelos termina haciendo cada uno a medias.
+  Carlos (director) recomendó explícitamente "1 a 3 municipios" en la
+  reunión del 2026-04-24.
+- **3 es el sweet spot:** suficiente para mostrar robustez de la metodología
+  ("funciona en 3 contextos diferentes" no es anécdota), pero pocos para
+  cuidar la calidad de cada modelo. Además queda dentro del rango sugerido
+  por el director.
+
+**Por qué *estos* 3:**
+
+- Carlos planteó tres criterios válidos para selección: (a) mayor número
+  absoluto de casos, (b) mayor incidencia por habitante, (c) interés
+  particular. Elegimos **(b) — mayor incidencia × 100k habitantes** —
+  porque captura las comunidades más vulnerables (que suelen ser
+  invisibilizadas en el criterio de casos absolutos, dominado por ciudades
+  grandes como Cali o Ibagué).
+- Dentro del top 10 por incidencia, priorizamos **diversidad climática y
+  regional** para fortalecer la narrativa del informe:
+  - **Valencia (Caribe / Córdoba):** zona ganadera, clima cálido húmedo,
+    representativa del foco endémico del Caribe colombiano.
+  - **Fundación (Sierra Nevada / Magdalena):** transición entre llanura
+    aluvial y piedemonte; contraste de temperatura y precipitación con
+    Valencia.
+  - **El Retorno (Amazonía / Guaviare):** selva, alta humedad, baja densidad
+    poblacional, contexto socioeconómico muy distinto. Es la diferenciación
+    geográfica más fuerte respecto al Caribe.
+
+Si la metodología funciona en estos 3 contextos, el argumento de
+generalización regional es mucho más fuerte que probarla en 3 municipios
+del mismo departamento.
+
+---
+
+## D2 — Cobertura temporal: 2007–2024 continuo
+
+**Decisión:** Usar **todos los años** entre 2007 y 2024 inclusive (18 años,
+serie mensual) para entrenamiento y test.
+
+**Por qué:**
+
+- La versión previa del proyecto usaba años discretos sueltos
+  (2010/2016/2019/2022/2024), lo cual deja huecos de hasta 6 años entre
+  observaciones. Eso impide capturar estacionalidad y ciclos epidémicos,
+  y hace inviable la partición train/test cronológica.
+- Carlos lo señaló como debilidad metodológica en la reunión del
+  2026-04-24: "usar toda la serie continua, no años representativos".
+- 18 años × 12 meses = 216 puntos por municipio. Es lo suficiente para
+  modelos clásicos (regresión logística, XGBoost) pero **demasiado poco
+  para deep learning**, lo cual también se decidió evitar (ver D5).
+
+---
+
+## D3 — Partición train/test cronológica
+
+**Decisión:** Train = primer ~80% de los meses del rango / Test = último
+~20%. Aproximadamente:
+
+- Train: 2007–2019 (13 años)
+- Test: 2020–2024 (5 años)
+
+**Por qué:**
+
+- En series de tiempo no se hace partición aleatoria — eso produciría
+  fuga temporal (información del futuro contaminando el entrenamiento).
+- Lo que se quiere predecir es el futuro inmediato; por eso el test debe
+  ser el **periodo más reciente**.
+- Carlos lo explicitó: "el test debe ser el último 20% de los años".
+- El test de 2024 solo (versión previa del proyecto) era un caso atípico
+  (año de exceso de dengue por El Niño) que no representa condiciones
+  normales. Con test de 5 años se mide rendimiento promedio en
+  condiciones variadas.
+
+---
+
+## D4 — Métricas priorizadas: Precision y Recall
+
+**Decisión:** Reportar y optimizar **Precision** y **Recall** sobre el
+test como métricas principales. Accuracy se reporta como referencia pero
+no se usa para decisión.
+
+**Por qué:**
+
+- El problema es **detección de excesos epidemiológicos** — una clase
+  minoritaria altamente desbalanceada. Accuracy en este contexto es
+  engañoso: un modelo que siempre predice "no exceso" puede tener 85%+
+  de accuracy y ser completamente inservible.
+- **Precision** responde: "cuando el modelo dice que hay exceso, ¿qué
+  tan confiable es?" — relevante para la utilidad operativa (evitar
+  movilizar recursos en falsos positivos).
+- **Recall** responde: "de los excesos reales, ¿cuántos detecta el
+  modelo?" — relevante para la utilidad sanitaria (no perder brotes
+  reales).
+- Ambas se reportan **por municipio** (no promediadas), porque la
+  decisión de implementar el modelo se toma a nivel local.
+
+**Punto de comparación:** el modelo nacional de Entrega 1 obtuvo
+Precision ≈ 43% / Recall ≈ 87%. Es un modelo "alarmista": detecta casi
+todo pero con muchas falsas alarmas. **El objetivo cuantitativo es subir
+Precision sin sacrificar Recall por debajo de ~60%** en al menos 2 de los
+3 municipios foco.
+
+---
+
+## D5 — Modelos: regresión logística regularizada + XGBoost
+
+**Decisión:** Mantener únicamente **Regresión Logística con regularización
+L2** y **XGBoost** como modelos finales. Eliminar Random Forest. No usar
+deep learning (LSTM, Transformers, TFT).
+
+**Por qué se eliminó Random Forest:**
+
+- En la matriz de Entrega 1, Random Forest dio Recall ≈ 2.4% sobre la
+  clase positiva ("exceso"). Es decir, **no detecta excesos** —
+  inservible para el problema.
+
+**Por qué no deep learning:**
+
+- 216 puntos por municipio × 3 municipios = 648 observaciones totales.
+- Un LSTM con `hidden_size = 64` ya tiene >200 parámetros entrenables.
+  Ratio observaciones/parámetros muy bajo → overfitting prácticamente
+  garantizado.
+- Carlos lo señaló: "el deep learning brillaría si tuvieran ~30 años a
+  escala diaria, o muchos municipios × semanas (~700.000 datos)".
+  No es el caso.
+- Si se intentara, se debería bajar `hidden_size` a 2–8, lo cual ya no
+  es "deep" sino esencialmente equivalente a una regresión.
+
+**Por qué Logística + XGBoost son suficientes:**
+
+- Logística regularizada captura relaciones lineales con interpretabilidad
+  alta (importante para el reporte y la sustentación).
+- XGBoost captura no-linealidades e interacciones, con interpretabilidad
+  vía SHAP/feature importance.
+- Cubren el espectro de complejidad sin sobrediseñar.
+
+**Manejo del desbalanceo:** `class_weight='balanced'` para Logística;
+`scale_pos_weight` recalculado por municipio para XGBoost.
+
+---
+
+## D6 — Población DANE: serie unificada base CNPV 2018
+
+**Decisión:** Usar la serie de proyecciones municipales del DANE
+**unificada bajo la base CNPV 2018** (Censo 2018), combinando:
+
+- Retroproyecciones 2005–2017 con base Censo 2018.
+- Proyecciones 2018–2042 post-COVID con base Censo 2018.
+
+Se descartó el archivo previo que mezclaba bases (Censo 2005 hasta 2020 +
+Censo 2018 desde 2021).
+
+**Por qué:**
+
+- El archivo previo introducía un **salto artificial en 2020→2021** de
+  hasta ±25% por municipio (ej. Valencia: 47.869 → 37.459, una caída del
+  22%). Eso no es realidad demográfica, es un cambio metodológico del
+  DANE al actualizar la base censal.
+- Como la partición train/test cae exactamente en ese borde (test empieza
+  ~2020), el escalón contaminaría las métricas: el modelo "vería" un
+  cambio fuerte que no es epidemiológico.
+- Usar una única base CNPV 2018 retroproyectada elimina el escalón:
+  Valencia 2020→2021 = +0.5%, Fundación = +2.1%. Cambios demográficamente
+  realistas.
+
+**Por qué no la otra dirección (Censo 2005 hasta 2024):**
+
+- No existe oficialmente. DANE publicó la retroproyección 2005-2017 con
+  base Censo 2018, pero **no** una proyección 2021-2024 con base Censo
+  2005 (los censos posteriores reemplazan al anterior como base oficial).
+
+---
+
+## D7 — Despliegue: prototipo, no producto
+
+**Decisión:** El entregable de despliegue es un **dashboard prototipo**
+que consume el archivo Excel ya procesado y muestra la predicción para
+el periodo de test. No se integra Google Earth Engine en tiempo real.
+
+**Por qué:**
+
+- El alcance del proyecto es **demostrativo**, no productivo.
+- Integrar APIs en tiempo real (GEE, SIVIGILA stream) requiere
+  infraestructura (autenticación, refresco programado, manejo de
+  errores) que no aporta al objetivo académico.
+- Carlos lo aclaró explícitamente: "que la interfaz consuma la tabla
+  de Excel ya generada".
+
+---
+
+## D8 — No esperar datos SIVIGILA 2025
+
+**Decisión:** Cerrar el rango en 2024 y no posponer el cierre del
+proyecto esperando publicación de SIVIGILA 2025.
+
+**Por qué:**
+
+- Al momento del análisis, SIVIGILA no había publicado 2025.
+- Si llegan a publicarse antes del cierre, se usarían como **segundo
+  test sin reentrenar** (validación adicional). Si no llegan, no
+  afecta la entrega.
+
+---
+
+## D9 — EDA enfocado, no exhaustivo nacional
+
+**Decisión:** No re-correr el EDA nacional exhaustivo de la Entrega 1
+con la serie ampliada. En su lugar, hacer un **EDA focalizado en los 3
+municipios foco** dentro del notebook de feature engineering.
+
+**Por qué:**
+
+- El EDA nacional de Entrega 1 (`notebooks/02_eda_dengue.ipynb` +
+  `03_eda_dengue_grave.ipynb` + `04_eda_comparativo.ipynb`) ya cubre las
+  preguntas descriptivas a nivel país. Repetirlo con más años no
+  cambia las conclusiones cualitativas.
+- Lo que sí informa decisiones de modelado es entender la dinámica
+  específica de los 3 foco: estacionalidad local, calidad de reporte
+  por año, correlación clima→casos local. Esto sí se hace nuevo.
+- Tiempo invertido en EDA redundante = tiempo no invertido en modelado
+  y dashboard.
+
+---
+
+## D10 — Pipeline de datos: loaders genéricos, panel filtrado
+
+**Decisión:** Mantener los loaders de bajo nivel (`cargar_dengue`,
+`cargar_dane`, `cargar_clima`) genéricos a nivel país. **Filtrar
+únicamente al construir el panel mensual procesado** (`data/processed/
+panel_municipal_mensual.csv`).
+
+**Por qué:**
+
+- Los loaders genéricos cuestan lo mismo escribir; reutilizables si en
+  el futuro se quiere extender el proyecto.
+- El panel filtrado a los 3 foco queda pequeño (~648 filas) y rápido de
+  iterar en notebooks.
+- La constante `MUNICIPIOS_FOCO` en `src/utils.py` centraliza la
+  decisión — un solo lugar para cambiar si se necesitara revisar.
+
+---
+
+## Referencias
+
+- Reunión con Carlos (director) — `docs/reuniones/2026-04-24_seguimiento_carlos.md`
+- Mejoras post-reunión — `docs/mejoras_proyecto_post_reunion_carlos.md`
+- Constantes del proyecto — `src/utils.py`

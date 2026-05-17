@@ -34,8 +34,18 @@ GEE_PROJECT_ID = os.environ.get("GEE_PROJECT_ID")
 # Anos de interes
 # Serie continua 2007-2024 (decisión Carlos 2026-04-24: usar todos los años)
 ANOS_ESTUDIO = list(range(2007, 2025))
-ANOS_DENGUE_REGULAR = [2010, 2016, 2022, 2024]  # No hay 2019 para cod 210
-ANOS_DENGUE_GRAVE = [2010, 2016, 2019, 2022, 2024]
+ANOS_DENGUE_REGULAR = list(range(2007, 2025))
+ANOS_DENGUE_GRAVE = list(range(2007, 2025))
+
+# Municipios objetivo del proyecto.
+# Selección por criterio de mayor incidencia × 100k habitantes, priorizando
+# diversidad climática y regional (Caribe, Sierra Nevada, Amazonía).
+# Justificación detallada en docs/decisiones_proyecto.md.
+MUNICIPIOS_FOCO = {
+    "23855": "Valencia",        # Córdoba - Caribe, alta incidencia
+    "47288": "Fundación",       # Magdalena - Sierra Nevada, transición climática
+    "95025": "El Retorno",      # Guaviare - Amazonía, vulnerabilidad alta
+}
 
 # Columnas comunes clave para el analisis
 COLS_CLAVE = [
@@ -49,8 +59,16 @@ COLS_CLAVE = [
     'Estado_final_de_caso', 'nom_est_f_caso'
 ]
 
-# Columnas extra que varian entre archivos (pueden no existir en todos)
-COLS_EXTRA = ['Particion', 'Partición', 'COD_EVE.1', 'consecutive_origen']
+# Columnas extra que varian entre archivos (pueden no existir en todos).
+# Se eliminan tras la carga para mantener un esquema uniforme.
+COLS_EXTRA = ['Particion', 'Partición', 'Separación', 'COD_EVE.1', 'consecutive_origen']
+
+# Variantes del identificador de caso que aparecen en años antiguos / sueltos.
+# En cargar_dengue() se renombran al canónico 'CONSECUTIVE'.
+COLS_RENOMBRADAS = {
+    'CONSECUTIVE2': 'CONSECUTIVE',     # 2007, 2008 (regular y grave)
+    'CONSECUTIVE_12': 'CONSECUTIVE',   # 2023 grave
+}
 
 
 # ============================================================================
@@ -88,7 +106,7 @@ PALETA_DENGUE = {
 # ============================================================================
 # Carga de datos
 # ============================================================================
-def cargar_dengue(tipo='regular'):
+def cargar_dengue(tipo='regular', anos=None, usecols=None):
     """
     Carga y concatena los archivos de dengue por tipo.
 
@@ -96,37 +114,48 @@ def cargar_dengue(tipo='regular'):
     ----------
     tipo : str
         'regular' para dengue (cod 210) o 'grave' para dengue grave (cod 220).
+    anos : list[int] | None
+        Subconjunto de años a cargar. Si es None, carga todos los Datos_<año>_<cod>
+        presentes en el directorio.
+    usecols : list[str] | None
+        Si se especifica, solo lee esas columnas (útil para reducir memoria —
+        cargar los 18 años completos en RAM puede superar 6 GB).
 
     Returns
     -------
     pd.DataFrame
-        DataFrame concatenado con todos los anos disponibles.
+        DataFrame concatenado, ordenado por año.
     """
     if tipo == 'regular':
         directorio = DENGUE_DIR
-        archivos = {
-            2010: 'Datos_2010_210.xlsx',
-            2016: 'Datos_2016_210.xlsx',
-            2022: 'Datos_2022_210.xlsx',
-            2024: 'Datos_2024_210.xlsx',
-        }
+        cod = '210'
     elif tipo == 'grave':
         directorio = DENGUE_GRAVE_DIR
-        archivos = {
-            2010: 'Datos_2010_220.xls',
-            2016: 'Datos_2016_220.xls',
-            2019: 'Datos_2019_220.xls',
-            2022: 'Datos_2022_220.xls',
-            2024: 'Datos_2024_220.xlsx',
-        }
+        cod = '220'
     else:
         raise ValueError("tipo debe ser 'regular' o 'grave'")
 
+    # Auto-descubrir archivos por año (extensión variable .xls / .xlsx)
+    rutas = {}
+    for ano in (anos if anos is not None else range(2007, 2025)):
+        for ext in ('.xlsx', '.xls'):
+            ruta = directorio / f"Datos_{ano}_{cod}{ext}"
+            if ruta.exists():
+                rutas[ano] = ruta
+                break
+
+    if not rutas:
+        raise FileNotFoundError(f"No se encontraron archivos Datos_<año>_{cod}.* en {directorio}")
+
     dfs = []
-    for ano, archivo in archivos.items():
-        ruta = directorio / archivo
-        print(f"  Cargando {archivo}...", end=" ")
-        df = pd.read_excel(ruta)
+    for ano in sorted(rutas):
+        ruta = rutas[ano]
+        print(f"  Cargando {ruta.name}...", end=" ")
+        df = pd.read_excel(ruta, usecols=usecols)
+        # Renombrar variantes del identificador de caso al canónico
+        for src, dst in COLS_RENOMBRADAS.items():
+            if src in df.columns and dst not in df.columns:
+                df = df.rename(columns={src: dst})
         # Eliminar columnas extra que varian entre archivos
         for col in COLS_EXTRA:
             if col in df.columns:
@@ -135,7 +164,7 @@ def cargar_dengue(tipo='regular'):
         dfs.append(df)
 
     df_total = pd.concat(dfs, ignore_index=True)
-    print(f"\n  Total: {len(df_total):,} registros")
+    print(f"\n  Total: {len(df_total):,} registros ({len(rutas)} años: {sorted(rutas)})")
     return df_total
 
 
