@@ -141,41 +141,36 @@ def cargar_dengue(tipo='regular'):
 
 def cargar_dane():
     """
-    Carga las proyecciones de poblacion del DANE.
+    Carga las proyecciones de poblacion municipal del DANE para 2007-2024.
+
+    El archivo combina dos fuentes oficiales:
+      - 2007-2020: Proyecciones Municipales base Censo 2005.
+      - 2021-2024: Proyecciones Municipales Post COVID-19 base Censo 2018.
 
     Returns
     -------
     pd.DataFrame
-        DataFrame con columnas: cod_dpto, departamento, cod_mpio, municipio,
-        y una columna por cada ano (2005-2020) con la poblacion total.
+        Columnas: cod_dpto, departamento, cod_mpio, municipio,
+        pob_2007 .. pob_2024 (poblacion total, area cabecera+rural).
     """
-    ruta = DANE_DIR / "ProyeccionMunicipios2005_2020.xls"
-    df = pd.read_excel(ruta, header=8, sheet_name='Mpios')
+    ruta = DANE_DIR / "poblacion_municipios_2007_2024.xlsx"
+    df = pd.read_excel(ruta, sheet_name="Población Total")
 
-    # Las primeras 16 columnas de anos (2005-2020) son TOTAL
-    # Las siguientes 16 son HOMBRES y las ultimas 16 son MUJERES
-    cols_base = ['DP', 'DPNOM', 'DPMP', 'MPIO']
-    anos = list(range(2005, 2021))
-
-    # Renombrar columnas de poblacion total
-    nuevas_cols = cols_base + [f'pob_{a}' for a in anos]
-    # Solo tomar las primeras 20 columnas (4 base + 16 anos total)
-    df_total = df.iloc[:, :20].copy()
-    df_total.columns = nuevas_cols
-
-    # Limpiar
-    df_total = df_total.dropna(subset=['DP'])
-    df_total['DP'] = df_total['DP'].astype(str).str.zfill(2)
-    df_total['DPMP'] = df_total['DPMP'].astype(str).str.zfill(5)
-
-    df_total = df_total.rename(columns={
-        'DP': 'cod_dpto',
-        'DPNOM': 'departamento',
-        'DPMP': 'cod_mpio',
-        'MPIO': 'municipio',
+    anos = list(range(2007, 2025))
+    df = df.rename(columns={
+        "DP": "cod_dpto",
+        "DPNOM": "departamento",
+        "COD_MPIO": "cod_mpio",
+        "NOM_MPIO": "municipio",
+        **{str(a): f"pob_{a}" for a in anos},
     })
 
-    return df_total
+    df = df.dropna(subset=["cod_dpto", "cod_mpio"])
+    df["cod_dpto"] = df["cod_dpto"].astype(int).astype(str).str.zfill(2)
+    df["cod_mpio"] = df["cod_mpio"].astype(int).astype(str).str.zfill(5)
+
+    cols = ["cod_dpto", "departamento", "cod_mpio", "municipio"] + [f"pob_{a}" for a in anos]
+    return df[cols]
 
 
 def cargar_clima():
