@@ -416,6 +416,101 @@ caso, pero queda documentado para una eventual extensión.
 
 ---
 
+## D15 — Features del modelo (28 columnas) e EXCLUSIONES por leakage
+
+**Decisión:** El feature matrix consta de **28 columnas**:
+
+| Familia | Variables | # |
+|---|---|---:|
+| Clima actual | `temperatura_c`, `precipitacion_mm`, `ndvi`, `dewpoint_c` | 4 |
+| Clima rezagado | cada variable × lag 1, 2, 3 | 12 |
+| Clima MM3 | media móvil 3 meses (sin incluir el mes actual) por variable | 4 |
+| Casos rezagados | `casos_total_lag1`, `_lag2`, `_lag3` | 3 |
+| Incidencia rezagada | `incidencia_x100k_lag1`, `_lag2`, `_lag3` | 3 |
+| Estacionalidad | `mes_sin = sin(2π·mes/12)`, `mes_cos = cos(2π·mes/12)` | 2 |
+
+**Excluido explícitamente (con razón):**
+
+| Variable excluida | Por qué |
+|---|---|
+| `casos_total` (lag 0) | **Leakage directo:** el target `exceso` es función de `casos_total > umbral`. |
+| `casos_regular`, `casos_grave` | Subconjuntos de `casos_total` en la misma fila → leakage. |
+| `hospitalizaciones`, `fallecidos` | Conteos derivados del propio outbreak — disponibles **después** de que el caso ocurre. |
+| `umbral_exceso` | Función directa de `casos_total` históricos; aporta poco valor predictivo y huele a leakage indirecto. |
+| `incidencia_x100k` (lag 0) | `casos_total / poblacion` — leakage. |
+| `casos_total_mm3`, `incidencia_x100k_mm3` | El `mm3` actual del panel incluye el mes corriente → leakage. Re-derivado en el notebook si se requiere. |
+| `ano` | El test (2020-2024) tiene años nunca vistos por el train (2007-2019). Incluir `ano` como feature numérica hace que XGBoost no pueda extrapolar y favorece memorización en Logística. Se excluye. |
+| `poblacion` | Casi constante dentro de un municipio en train → no aporta señal y se acerca a un id de tiempo. |
+| `cod_mpio`, `municipio`, `departamento` | Un modelo por municipio → constantes dentro del modelo. |
+
+**Codificación de la estacionalidad:** se elige codificación cíclica
+`sin(2πm/12)` y `cos(2πm/12)` en lugar de one-hot, porque preserva la
+proximidad real entre enero/diciembre (importante para modelos lineales).
+
+---
+
+## D16 — Tuning: defaults para Logística + GridSearchCV moderado para XGBoost
+
+**Decisión:**
+
+- **Regresión Logística:** entrenar con defaults de scikit-learn más
+  `class_weight="balanced"` (D5). Sin grid search — tiene pocos
+  hiperparámetros con impacto y los defaults regularizados (L2, C=1.0)
+  son razonables para este volumen.
+- **XGBoost:** `GridSearchCV` con `TimeSeriesSplit(n_splits=5)` sobre el
+  conjunto de entrenamiento (2007-2019). Grid pequeño:
+
+  ```python
+  param_grid = {
+      "n_estimators":    [100, 300],
+      "max_depth":       [3, 5],
+      "learning_rate":   [0.05, 0.1],
+  }
+  ```
+
+  8 combinaciones × 5 folds = 40 ajustes por municipio × 3 municipios
+  = 120 ajustes totales. Tiempo estimado: 2-5 minutos.
+
+**Por qué TimeSeriesSplit y no K-Fold:** mantener la coherencia temporal
+del split principal (D3). K-Fold aleatorio violaría la regla "no usar
+información del futuro" dentro del CV.
+
+**Por qué no Optuna/bayesiano:** el dataset es pequeño (~150 filas de
+train por municipio). El tuning más sofisticado no compensa el costo
+de implementación.
+
+**Métrica de selección en GridSearchCV:** `f1` (balance Precision/Recall).
+No usamos `roc_auc` porque el problema es desbalanceado y AUC puede ser
+optimista cuando la prevalencia es baja.
+
+---
+
+## D17 — Baseline trivial como piso comparativo
+
+**Decisión:** entrenar y evaluar también un **baseline trivial** definido
+así:
+
+```
+exceso_baseline(m, año) = 1 si casos_total_lag1 > 2
+                          0 en otro caso
+```
+
+Es decir: "si el mes anterior hubo más de 2 casos, alerta".
+
+**Por qué:**
+
+- Es el "modelo memoria pura" — solo mira el mes pasado.
+- Si Logística o XGBoost no le ganan al baseline, probablemente no
+  hayan aprendido nada útil sobre clima.
+- Para el informe: el baseline da un punto de referencia interno
+  ("nuestro modelo Y subió Precision de X% del baseline a Z%") que
+  acompaña al comparador externo (43%/87% del modelo nacional de
+  Entrega 1).
+
+**Esfuerzo:** ~20 líneas de código, no requiere entrenamiento.
+
+---
+
 ## Referencias
 
 - Reunión con Carlos (director) — `docs/reuniones/2026-04-24_seguimiento_carlos.md`
