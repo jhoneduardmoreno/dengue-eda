@@ -147,11 +147,22 @@ def cargar_dengue(tipo='regular', anos=None, usecols=None):
     if not rutas:
         raise FileNotFoundError(f"No se encontraron archivos Datos_<año>_{cod}.* en {directorio}")
 
+    # Si el usuario filtra columnas, expandir el set para aceptar también las
+    # variantes que se renombrarán después (ej. CONSECUTIVE2 → CONSECUTIVE).
+    if usecols is not None:
+        cols_set = set(usecols)
+        for src, dst in COLS_RENOMBRADAS.items():
+            if dst in cols_set:
+                cols_set.add(src)
+        usecols_callable = lambda c: c in cols_set  # noqa: E731
+    else:
+        usecols_callable = None
+
     dfs = []
     for ano in sorted(rutas):
         ruta = rutas[ano]
         print(f"  Cargando {ruta.name}...", end=" ")
-        df = pd.read_excel(ruta, usecols=usecols)
+        df = pd.read_excel(ruta, usecols=usecols_callable)
         # Renombrar variantes del identificador de caso al canónico
         for src, dst in COLS_RENOMBRADAS.items():
             if src in df.columns and dst not in df.columns:

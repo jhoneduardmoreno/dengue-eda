@@ -266,6 +266,134 @@ panel_municipal_mensual.csv`).
 
 ---
 
+## D11 — Fecha del caso: `INI_SIN` (inicio de síntomas)
+
+**Decisión:** Asignar cada caso al mes correspondiente a su `INI_SIN`
+(fecha de inicio de síntomas), no a `FEC_NOT` (notificación) ni a
+`FEC_HOS` (hospitalización).
+
+**Por qué:**
+
+- **Estándar epidemiológico**: las curvas epidémicas se construyen sobre
+  fecha de inicio de síntomas porque es la que mejor refleja la dinámica
+  real de transmisión. La notificación introduce retrasos administrativos
+  variables (entre días y semanas), y la hospitalización solo aplica a
+  un subconjunto.
+- **Consistencia con el modelo de transmisión**: el lag biológico
+  (ciclo del mosquito, incubación viral) tiene sentido respecto al
+  inicio de síntomas, no respecto a cuándo el sistema de salud registró
+  el caso.
+- **Robustez frente a cambios administrativos**: si en algún año
+  SIVIGILA cambió los plazos de notificación, `INI_SIN` no se ve
+  afectado pero `FEC_NOT` sí.
+
+**Fallback:** si `INI_SIN` está nulo para un caso (en Entrega 1 era
+~0% en regular y 0% en grave), usar `FEC_NOT` como respaldo en lugar
+de descartar el caso.
+
+---
+
+## D12 — Definición del target: percentil histórico por mes
+
+**Decisión:** El target binario "exceso epidemiológico" se define
+**por municipio y por mes calendario** así:
+
+```
+exceso(m, año) = 1 si casos(m, año) > percentil_75( casos(m, año') para año' < año )
+                 0 en otro caso
+```
+
+Es decir: para cada municipio y cada mes (enero, febrero, ...), se
+calcula el percentil 75 de casos observados **en años anteriores**, y
+el mes actual cuenta como "exceso" si supera ese umbral histórico.
+
+**Por qué:**
+
+- **Captura estacionalidad real**: el dengue tiene picos estacionales.
+  Lo "anormal" no es lo mismo en enero (mes seco) que en julio (lluvioso).
+  Calcular el umbral por mes calendario respeta esto.
+- **Sin fuga temporal**: el umbral solo usa años previos, no contamina
+  con información del futuro. Compatible con la partición cronológica
+  (D3).
+- **Interpretable**: "exceso = mes en el cuartil superior histórico"
+  es fácil de explicar a un revisor.
+- **Defendible**: es la formulación que usa el INS Colombia en sus
+  canales endémicos publicados.
+
+**Alternativas descartadas:**
+
+- *Umbral fijo por incidencia* (ej. ≥30 × 100k): no respeta diferencias
+  entre municipios — Valencia y El Retorno tienen niveles base muy
+  distintos.
+- *Media + 2 desviaciones móvil*: más sensible a outliers individuales
+  y menos interpretable que un percentil.
+- *Anomaly detection no supervisado*: pierde la ventaja del aprendizaje
+  supervisado y agrega complejidad.
+
+**Parámetro abierto:** el percentil exacto (75 o 90) se afina en la
+fase de modelado. Empezamos con 75 (más casos positivos = más fácil
+entrenar) y se puede subir a 90 si el modelo lo aguanta.
+
+---
+
+## D13 — Casos = dengue total (regular + grave)
+
+**Decisión:** El target del modelo se construye sobre **dengue total**
+(suma de cód 210 + cód 220) por (municipio, mes). En el panel se
+preservan también `casos_dengue_regular` y `casos_dengue_grave` como
+columnas separadas, para análisis descriptivo y como features
+potenciales.
+
+**Por qué:**
+
+- **Volumen**: dengue grave es ~4% del total. En municipios pequeños
+  (El Retorno, pob 13k) el grave es 0–2 casos/mes la mayoría del tiempo
+  — señal estadísticamente insuficiente para detectar "excesos" como
+  target binario.
+- **Convención epidemiológica**: los sistemas de alerta temprana de
+  PAHO/OMS/INS monitorean **casos totales** porque reflejan la
+  intensidad de transmisión. El grave es una clasificación clínica
+  derivada que sigue al total con lag.
+- **Continuidad con el comparador**: la cifra de Entrega 1 (P=43%,
+  R=87%) se calculó sobre dengue total. Mantener el target permite la
+  comparación "antes vs después" en el informe.
+
+**Cuándo grave habría sido el target:** si el objetivo fuera planificación
+hospitalaria/UCI directa, en lugar de vigilancia epidemiológica.
+No es el caso de este proyecto.
+
+---
+
+## D14 — Clima a granularidad departamental
+
+**Decisión:** Mantener las variables climáticas
+(`temperatura_c`, `precipitacion_mm`, `ndvi`, `dewpoint_c`) a nivel
+**departamental** — es decir, todos los municipios de un mismo
+departamento reciben el mismo vector climático mensual.
+
+**Por qué:**
+
+- **Granularidad muncipal no aporta discriminación útil** entre los
+  3 foco: cada uno está en un departamento distinto (Córdoba, Magdalena,
+  Guaviare), así que el clima departamental ya los separa
+  completamente.
+- **Costo de redescargar a granularidad municipal:** ~1.040 municipios
+  × 18 años × 12 meses × 4 datasets ≈ 900.000 reducciones GEE. Con el
+  script paralelo serían ~2 horas adicionales.
+- **Calidad de la señal:** los datasets usados (MODIS LST, CHIRPS,
+  MODIS NDVI, ERA5 dewpoint) tienen resoluciones nativas de 1–11 km;
+  agregar a municipio en algunos casos sería casi recolectar el mismo
+  pixel varias veces. La ganancia informativa es marginal.
+- **Si en el futuro se quisiera escalar a más municipios** dentro del
+  mismo departamento, ahí sí valdría la pena migrar a granularidad
+  municipal. Para 3 foco en 3 departamentos, no.
+
+**Limitación reconocida:** dos municipios del mismo departamento
+tendrían exactamente las mismas covariables climáticas. No es nuestro
+caso, pero queda documentado para una eventual extensión.
+
+---
+
 ## Referencias
 
 - Reunión con Carlos (director) — `docs/reuniones/2026-04-24_seguimiento_carlos.md`
