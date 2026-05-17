@@ -293,19 +293,41 @@ de descartar el caso.
 
 ---
 
-## D12 — Definición del target: percentil histórico por mes
+## D12 — Definición del target: percentil 75 histórico por mes con piso de 2
 
 **Decisión:** El target binario "exceso epidemiológico" se define
 **por municipio y por mes calendario** así:
 
 ```
-exceso(m, año) = 1 si casos(m, año) > percentil_75( casos(m, año') para año' < año )
+umbral(m, año) = max( percentil_75( casos(m, año') para año' < año ), 2 )
+exceso(m, año) = 1 si casos(m, año) > umbral(m, año)
                  0 en otro caso
 ```
 
 Es decir: para cada municipio y cada mes (enero, febrero, ...), se
-calcula el percentil 75 de casos observados **en años anteriores**, y
-el mes actual cuenta como "exceso" si supera ese umbral histórico.
+calcula el percentil 75 de casos observados **en años anteriores**,
+**con un piso mínimo de 2 casos**, y el mes actual cuenta como "exceso"
+si supera ese umbral.
+
+**Evidencia que motivó el piso de 2:**
+
+El EDA exploratorio (notebook `06_eda_foco.ipynb`) comparó tres
+variantes sobre Valencia:
+
+| Definición | Prevalencia | Calidad |
+|---|---:|---|
+| A: p75 sin piso | 57.3 % | ❌ Marca como "exceso" meses con 1-2 casos en 2010-2015, cuando el reporte estaba incompleto / la transmisión era muy baja. Ruido. |
+| **B: p75 con piso 2** | **39.6 %** | ✅ Los excesos coinciden con los picos visualmente claros de los brotes. |
+| C: p90 sin piso | 42.7 % | ⚠️ Todavía contamina los años pre-2013 (mismo problema que A en menor escala). |
+
+Sin el piso, el target degenera en municipios pequeños o años con
+reporte incipiente: si los primeros años tienen historial de 0 casos
+en cierto mes, el p75 = 0 y cualquier mes con ≥1 caso se marca como
+"exceso", inflando la prevalencia con falsos positivos.
+
+Con piso de 2 casos, la prevalencia global pasó de 50.3 % a 36.8 %
+y las prevalencias por municipio quedaron más balanceadas
+(Valencia 39.6 %, Fundación 38.5 %, El Retorno 32.3 %).
 
 **Por qué:**
 

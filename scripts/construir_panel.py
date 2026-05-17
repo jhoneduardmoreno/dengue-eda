@@ -234,10 +234,13 @@ def integrar_poblacion(panel: pd.DataFrame) -> pd.DataFrame:
 
 # ---------------------------------------------------------------------------
 # 8. Target: exceso por percentil 75 histórico por mes calendario (solo años previos)
+#    con piso mínimo para evitar que meses-cero históricos disparen alertas con
+#    1 caso (D12 revisado, ver docs/decisiones_proyecto.md).
 # ---------------------------------------------------------------------------
-def construir_target(panel: pd.DataFrame, percentil: float = 75) -> pd.DataFrame:
+def construir_target(panel: pd.DataFrame, percentil: float = 75,
+                     piso: int = 2) -> pd.DataFrame:
     print("\n" + "=" * 70)
-    print(f"Target: exceso = casos_total > percentil-{percentil:.0f} histórico mes")
+    print(f"Target: exceso = casos_total > max(p{percentil:.0f}_hist(mes), {piso})")
     print("=" * 70)
 
     panel = panel.sort_values(["cod_mpio", "ano", "mes"]).reset_index(drop=True)
@@ -245,23 +248,27 @@ def construir_target(panel: pd.DataFrame, percentil: float = 75) -> pd.DataFrame
     # Para cada fila (mpio, año, mes): percentil de casos_total en ese mismo mes
     # calendario, considerando solo los años estrictamente anteriores.
     def umbral_historico(g: pd.DataFrame) -> pd.Series:
-        # g está ordenado por año (un solo mpio, un solo mes)
         casos = g["casos_total"].values
         anos = g["ano"].values
         out = np.full(len(g), np.nan)
         for i in range(len(g)):
             hist = casos[anos < anos[i]]
-            if len(hist) >= 2:  # necesita al menos 2 años para un cuartil estable
+            if len(hist) >= 2:
                 out[i] = np.percentile(hist, percentil)
         return pd.Series(out, index=g.index)
 
-    panel["umbral_p75"] = (
+    umbral = (
         panel.groupby(["cod_mpio", "mes"], group_keys=False)
         .apply(umbral_historico)
     )
-    panel["exceso"] = (panel["casos_total"] > panel["umbral_p75"]).astype("Int64")
-    # Para filas sin umbral (primeros años, < 2 años de historia): NaN
-    panel.loc[panel["umbral_p75"].isna(), "exceso"] = pd.NA
+    umbral = umbral.reindex(panel.index)
+    # Aplicar piso: el umbral nunca puede ser menor que `piso` (evita falsos
+    # positivos en municipios donde el histórico del mes era todo ceros).
+    umbral_con_piso = umbral.where(umbral.isna(), umbral.clip(lower=piso))
+
+    panel["umbral_exceso"] = umbral_con_piso
+    panel["exceso"] = (panel["casos_total"] > panel["umbral_exceso"]).astype("Int64")
+    panel.loc[panel["umbral_exceso"].isna(), "exceso"] = pd.NA
 
     prevalencia = panel["exceso"].mean()
     print(f"  Prevalencia global de exceso: {float(prevalencia)*100:.1f}%")

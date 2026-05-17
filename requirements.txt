@@ -14,3 +14,5 @@ scikit-learn
 xgboost
 python-docx
 python-dotenv
+tqdm
+pyarrow
