@@ -16,3 +16,4 @@ python-docx
 python-dotenv
 tqdm
 pyarrow
+shap
