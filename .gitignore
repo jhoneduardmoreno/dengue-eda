@@ -1,6 +1,10 @@
 # Datos (archivos grandes)
 data/
 
+# Bundle consolidado generado por scripts/exportar_artefactos_dashboard.py
+# (los joblibs individuales por municipio sí se versionan; el bundle es derivado).
+models/foco_models.joblib
+
 # Jupyter
 .ipynb_checkpoints/
 
